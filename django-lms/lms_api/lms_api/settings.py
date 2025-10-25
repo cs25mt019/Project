@@ -9,7 +9,10 @@ https://docs.djangoproject.com/en/5.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -76,13 +79,13 @@ WSGI_APPLICATION = 'lms_api.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': {
+     'default': {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'django_lms',
-        'USER':'root',
-        'PASSWORD':'Case@27032002',
-        'HOST':'localhost',
-        'PORT':'3006',
+        'USER': 'root',
+        'PASSWORD': os.getenv('DB_PASSWORD', 'Case@27032002'),
+        'HOST': 'localhost',
+        'PORT': '3006',
     }
 }
 

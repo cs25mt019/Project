@@ -1,0 +1,67 @@
+Setup--->
+
+sudo apt install mysql-server
+sudo mysql_secure_installation
+sudo systemctl start mysql
+sudo systemctl enable MySQL
+
+# Login to MySQL as root
+sudo mysql -u root -p
+
+-- Set root password (if not set during installation)
+ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'Case@27032002';
+
+-- Apply changes
+FLUSH PRIVILEGES;
+EXIT;
+
+
+
+sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
+
+[mysqld]
+port = 3006
+bind-address = 127.0.0.1
+
+
+sudo systemctl restart mysql  # Ubuntu/Debin
+
+sudo apt install python3 python3-pip python3-venv
+
+
+# Clone/copy your project
+cd /path/to/your/project
+
+# Create virtual environment
+python3 -m venv venv
+
+# Activate virtual environment
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# If mysqlclient fails, try:
+pip install mysqlclient
+
+
+
+# Create .env file
+nano .env
+
+
+
+SECRET_KEY=your-django-secret-key-from-windows
+DB_PASSWORD=Case@27032002
+DEBUG=True
+DB_HOST=localhost
+DB_PORT=3006
+
+
+
+mysql -u root -p -P 3006 -h localhost
+
+
+# 6. Database setup
+python manage.py migrate
+python manage.py runserver
