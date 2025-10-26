@@ -2,8 +2,9 @@ Setup--->
 
 sudo apt install mysql-server
 sudo mysql_secure_installation
-sudo systemctl start mysql
 sudo systemctl enable MySQL
+sudo systemctl start mysql
+
 
 # Login to MySQL as root
 sudo mysql -u root -p
