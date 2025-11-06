@@ -11,7 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: django-lms 
+        working-directory: django-lms
+
     services:
       mysql:
         image: mysql:8.0
@@ -42,8 +43,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          submodules: 'false'
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -52,9 +51,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd django-lms/lms_api
           python -m pip install --upgrade pip
-          pip install -r ../requirements.txt
+          pip install -r requirements.txt
           pip install mysqlclient pytest pytest-django pytest-cov coverage
 
       - name: Wait for MySQL to be ready
@@ -68,21 +66,20 @@ jobs:
       - name: Grant privileges to test user
         run: |
           sudo apt-get install -y mysql-client
-          mysql -h 127.0.0.1 -u root -proot -e "GRANT ALL PRIVILEGES ON *.* TO 'test_user'@'%' WITH GRANT OPTION;"
+          mysql -h 127.0.0.1 -u root -proot -e "GRANT ALL PRIVILEGES ON django_lms.* TO 'test_user'@'%' IDENTIFIED BY 'test_password';"
           mysql -h 127.0.0.1 -u root -proot -e "FLUSH PRIVILEGES;"
 
       - name: Run Django Migrations
         run: |
-          cd django-lms/lms_api
           python manage.py makemigrations
           python manage.py migrate
 
       - name: Run Tests with Coverage
         run: |
-          pytest --cov=main --cov-report=term-missing --cov-report=xml
+          pytest --cov=main --cov-report=term-missing --cov-report=xml --cov-fail-under=60
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: django-lms/lms_api/coverage.xml
+          path: django-lms/coverage.xml
