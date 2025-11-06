@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+*.log
+*.pot
+*.mo
+
+# Environment files
+.env
+.env.*
+
+# Django media and static uploads
+/media/
+django-lms/lms_api/media/
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
+*.jpg
+*.jpeg
+*.png
+*.gif
+
+# Node / React
+node_modules/
+build/
+dist/
+*.lock
+
+# Coverage and test files
+.coverage
+htmlcov/
+coverage.xml
+
+# IDE & OS junk
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
