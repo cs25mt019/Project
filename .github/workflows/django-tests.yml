@@ -1,0 +1,68 @@
+name: SpringBoard
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      db:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      DJANGO_SETTINGS_MODULE: lms_api.settings
+      DEBUG: "1"
+      SECRET_KEY: testsecret
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/test_db
+      PYTHONPATH: .
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          cd django-lms/lms_api
+          python -m pip install --upgrade pip
+          pip install -r ../requirements.txt
+          pip install pytest pytest-django pytest-cov coverage
+
+      - name:  Run Django Migrations
+        run: |
+          cd django-lms/lms_api
+          python manage.py makemigrations
+          python manage.py migrate
+
+      - name: Run Tests with Coverage
+        run: |
+          cd django-lms/lms_api
+          coverage run -m pytest
+          coverage report -m
+          coverage xml
+
+      - name:  Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: django-lms/lms_api/coverage.xml
