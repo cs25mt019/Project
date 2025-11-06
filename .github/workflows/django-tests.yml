@@ -2,25 +2,26 @@ name: SpringBoard
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master ]
   pull_request:
-    branches: [ main ]
+    branches: [ master ]
 
 jobs:
   test:
     runs-on: ubuntu-latest
 
     services:
-      db:
-        image: postgres:15
+      mysql:
+        image: mysql:8.0
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: test_db
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: django_lms
+          MYSQL_USER: test_user
+          MYSQL_PASSWORD: test_password
         ports:
-          - 5432:5432
+          - 3306:3306
         options: >-
-          --health-cmd="pg_isready -U postgres"
+          --health-cmd="mysqladmin ping -h localhost -uroot -proot"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -29,7 +30,11 @@ jobs:
       DJANGO_SETTINGS_MODULE: lms_api.settings
       DEBUG: "1"
       SECRET_KEY: testsecret
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/test_db
+      DB_NAME: django_lms
+      DB_USER: test_user
+      DB_PASSWORD: test_password
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3006
       PYTHONPATH: .
 
     steps:
@@ -46,9 +51,17 @@ jobs:
           cd django-lms/lms_api
           python -m pip install --upgrade pip
           pip install -r ../requirements.txt
-          pip install pytest pytest-django pytest-cov coverage
+          pip install mysqlclient pytest pytest-django pytest-cov coverage
 
-      - name:  Run Django Migrations
+      - name: Wait for MySQL to be ready
+        run: |
+          sudo apt-get install -y mysql-client
+          until mysqladmin ping -h 127.0.0.1 -u root -proot --silent; do
+            echo "Waiting for database connection..."
+            sleep 5
+          done
+
+      - name: Run Django Migrations
         run: |
           cd django-lms/lms_api
           python manage.py makemigrations
@@ -61,7 +74,7 @@ jobs:
           coverage report -m
           coverage xml
 
-      - name:  Upload coverage report
+      - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report

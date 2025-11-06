@@ -82,13 +82,13 @@ WSGI_APPLICATION = 'lms_api.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-     'default': {
+    'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'django_lms',
-        'USER': 'root',
-        'PASSWORD':'Case@27032002',
-        'HOST': 'localhost',
-        'PORT': '3006',
+        'NAME': os.getenv('DB_NAME', 'django_lms'),
+        'USER': os.getenv('DB_USER', 'root'),
+        'PASSWORD': os.getenv('DB_PASSWORD', 'Case@27032002'),
+        'HOST': os.getenv('DB_HOST', '127.0.0.1'),
+        'PORT': os.getenv('DB_PORT', '3006'),
     }
 }
 
