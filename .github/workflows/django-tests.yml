@@ -59,4 +59,31 @@ jobs:
         run: |
           sudo apt-get install -y mysql-client
           until mysqladmin ping -h 127.0.0.1 -u root -proot --silent; do
-            echo
+            echo "Waiting for database connection..."
+            sleep 5
+          done
+
+      - name: Grant privileges to test user
+        run: |
+          sudo apt-get install -y mysql-client
+          mysql -h 127.0.0.1 -u root -proot -e "GRANT ALL PRIVILEGES ON *.* TO 'test_user'@'%' WITH GRANT OPTION;"
+          mysql -h 127.0.0.1 -u root -proot -e "FLUSH PRIVILEGES;"
+
+      - name: Run Django Migrations
+        run: |
+          cd django-lms/lms_api
+          python manage.py makemigrations
+          python manage.py migrate
+
+      - name: Run Tests with Coverage
+        run: |
+          cd django-lms/lms_api
+          coverage run -m pytest
+          coverage report -m
+          coverage xml
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: django-lms/lms_api/coverage.xml
