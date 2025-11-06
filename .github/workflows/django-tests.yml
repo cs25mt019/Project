@@ -19,7 +19,7 @@ jobs:
           MYSQL_USER: test_user
           MYSQL_PASSWORD: test_password
         ports:
-          - 3306:3306
+          - 3306:3006
         options: >-
           --health-cmd="mysqladmin ping -h localhost -uroot -proot"
           --health-interval=10s
@@ -34,7 +34,7 @@ jobs:
       DB_USER: test_user
       DB_PASSWORD: test_password
       DB_HOST: 127.0.0.1
-      DB_PORT: 3006
+      DB_PORT: 3306
       PYTHONPATH: .
 
     steps:
