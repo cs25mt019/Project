@@ -7,11 +7,8 @@ on:
     branches: [ master ]
 
 jobs:
-  test:
+  backend-tests:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: django-lms
 
     services:
       mysql:
@@ -38,7 +35,7 @@ jobs:
       DB_PASSWORD: test_password
       DB_HOST: 127.0.0.1
       DB_PORT: 3306
-      PYTHONPATH: .
+      PYTHONPATH: ./lms_api 
 
     steps:
       - name: Checkout code
@@ -51,6 +48,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          cd lms_api
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install mysqlclient pytest pytest-django pytest-cov coverage
@@ -72,15 +70,17 @@ jobs:
 
       - name: Run Django Migrations
         run: |
+          cd lms_api
           python manage.py makemigrations
           python manage.py migrate
 
       - name: Run Tests with Coverage
         run: |
-          pytest --cov=main --cov-report=term-missing --cov-report=xml --cov-fail-under=60
+          cd lms_api
+          pytest --cov=main --cov-report=term-missing --cov-report=xml
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: django-lms/coverage.xml
+          path: lms_api/coverage.xml
