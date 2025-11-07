@@ -65,8 +65,10 @@ jobs:
       - name: Grant privileges to test user
         run: |
           mysql -h 127.0.0.1 -u root -proot -e "CREATE USER IF NOT EXISTS 'test_user'@'%' IDENTIFIED BY 'test_password';"
-          mysql -h 127.0.0.1 -u root -proot -e "GRANT ALL PRIVILEGES ON django_lms.* TO 'test_user'@'%';"
-          mysql -h 127.0.0.1 -u root -proot -e "FLUSH PRIVILEGES;"
+          mysql -h 127.0.0.1 -uroot -proot -e "GRANT ALL PRIVILEGES ON *.* TO 'test_user'@'%' WITH GRANT OPTION;"
+          mysql -h 127.0.0.1 -uroot -proot -e "FLUSH PRIVILEGES;"
+        - name: Grant privileges to test_user
+
 
       - name: Run Django Migrations
         working-directory: django-lms/lms_api
