@@ -1,5 +1,7 @@
 from django.urls import path
 from . import views
+from . import auth_views
+
 
 urlpatterns = [
     path('teacher/', views.teacherList.as_view()),
@@ -44,4 +46,49 @@ urlpatterns = [
 
     # Student course detail with chapters
     path('student-course-detail/<int:course_id>/', views.StudentCourseDetail.as_view(), name='student-course-detail'),
+
+    #assignments
+    path('assignments/', views.AssignmentListCreateView.as_view(), name='assignments'),
+    path('assignments/<int:pk>/', views.AssignmentDetailView.as_view(), name='assignment-detail'),
+
+    # Submissions
+    path('submissions/', views.AssignmentSubmissionListCreateView.as_view(), name='submissions'),
+    path('submissions/<int:pk>/', views.AssignmentSubmissionDetailView.as_view(), name='submission-detail'),
+
+    path("course-assignments/<int:course_id>/", views.CourseAssignmentsList.as_view()),
+
+    path("assignment-submissions/<int:assignment_id>/", views.AssignmentSubmissionsList.as_view()),
+
+    path("grade-submission/<int:pk>/", views.GradeSubmission.as_view()),
+
+    path("chapter-progress/", views.ChapterProgressView.as_view()),
+
+    path("course-progress/<int:student_id>/<int:course_id>/", views.StudentCourseProgress.as_view()),
+
+    #for quizes
+    path("quizzes/", views.QuizListCreateView.as_view(), name="quiz-list-create"),
+    path("quizzes/<int:pk>/", views.QuizDetailView.as_view(), name="quiz-detail"),
+    path("questions/", views.QuestionListCreateView.as_view(), name="question-list-create"),
+    path("quiz-attempts/", views.QuizAttemptListCreateView.as_view(), name="quiz_attempts"),
+
+    #for teacher to check result
+    path("quiz/<int:quiz_id>/attempts/", views.QuizAttemptsListView.as_view(), name="quiz-attempts-list"),
+
+    path("discussions/", views.DiscussionListCreateView.as_view(), name="discussions"),
+    
+    #for searching
+    path("search/", views.GlobalSearchView.as_view(), name="global-search"),
+
+    path("home/", views.HomePageView.as_view(), name="home"),
+
+     path("auth/student/register/", auth_views.StudentRegisterView.as_view(), name="student-register"),
+    path("auth/student/login/", auth_views.StudentLoginView.as_view(), name="student-login"),
+
+    # Teacher Auth
+    path("auth/teacher/register/", auth_views.TeacherRegisterView.as_view(), name="teacher-register"),
+    path("auth/teacher/login/", auth_views.TeacherLoginView.as_view(), name="teacher-login"),
+
+    # Common Logout
+    path("auth/logout/", auth_views.LogoutView.as_view(), name="logout"),
+
 ]

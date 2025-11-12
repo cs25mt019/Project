@@ -1,6 +1,6 @@
 from django.shortcuts import render
 from rest_framework.views import APIView
-from .serialize import studentCourseEnrollmentSerializer, teacherSerializer,courseCategorySerializer,courseSerializer,chapterSerializer,studentSerializer,CourseRatingSerializer   
+from .serialize import studentCourseEnrollmentSerializer, teacherSerializer,courseCategorySerializer,courseSerializer,chapterSerializer,studentSerializer,CourseRatingSerializer,AssignmentSerializer, AssignmentSubmissionSerializer , DiscussionSerializer
 from rest_framework.response import Response
 from rest_framework import generics
 from rest_framework import permissions
@@ -10,7 +10,8 @@ from . import models
 from .models import Student
 from django.db.models import Avg
 from rest_framework import status
-
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from django.contrib.auth.hashers import check_password
 # class teacherList(APIView):
 #     def get(self,request):
 #         teachers=models.Teacher.objects.all()
@@ -22,6 +23,7 @@ from rest_framework import status
 class teacherList(generics.ListCreateAPIView):
     queryset=models.Teacher.objects.all()
     serializer_class=teacherSerializer
+    permission_classes=[AllowAny]
     #permission_classes=[permissions.IsAuthenticated]
 class teacherDetail(generics.RetrieveUpdateDestroyAPIView):
     queryset=models.Teacher.objects.all()
@@ -43,9 +45,11 @@ def teacher_login(request):
 class CategoryList(generics.ListCreateAPIView):
     queryset=models.CourseCategory.objects.all()
     serializer_class=courseCategorySerializer
+    permission_classes=[AllowAny]
 
 class CourseList(generics.ListCreateAPIView):
     serializer_class = courseSerializer
+    permission_classes=[AllowAny]
     def get_queryset(self):
         qs = models.Course.objects.all()
 
@@ -108,24 +112,29 @@ class ChapterDetail(generics.RetrieveUpdateDestroyAPIView):
 class StudentList(generics.ListCreateAPIView):
     queryset=models.Student.objects.all()
     serializer_class=studentSerializer
+    permission_classes=[AllowAny]
 
 
 class StudentLogin(APIView):
+    permission_classes = [AllowAny]
     def post(self, request):
         username = request.data.get("username")
         password = request.data.get("password")
-
         try:
-            student = Student.objects.get(username=username, password=password)
-            data = studentSerializer(student).data
-            return Response({"bool": True, "student": data})
+            student = Student.objects.get(username=username)
+            if check_password(password, student.password):
+                data = studentSerializer(student).data
+                return Response({"bool": True, "student": data})
         except Student.DoesNotExist:
-            return Response({"bool": False, "msg": "Invalid username or password"})
+            pass
+        return Response({"bool": False, "msg": "Invalid username or password"})
+
 
 
 class StudentEnrollCourseList(generics.ListCreateAPIView):
    queryset = models.StudentCourseEnrollment.objects.all()
    serializer_class = studentCourseEnrollmentSerializer
+   permission_classes = [IsAuthenticated]
 
 class EnrolledStudentsList(generics.ListAPIView):
     serializer_class = studentSerializer
@@ -227,6 +236,7 @@ class TeacherChangePassword(APIView):
     
 #teacher Dashboard
 class TeacherDashboard(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request, teacher_id):
         # Total courses by teacher
         total_courses = models.Course.objects.filter(Teacher_id=teacher_id).count()
@@ -249,6 +259,7 @@ class TeacherDashboard(APIView):
 
 #for getting all courses a student is enrolled in
 class StudentEnrolledCourses(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request, student_id):
         enrollments = models.StudentCourseEnrollment.objects.filter(student_id=student_id)
         courses = [enrollment.course for enrollment in enrollments]
@@ -272,3 +283,277 @@ class StudentCourseDetail(APIView):
             "chapters": chapter_data
         })
 
+
+# Teacher creates and views assignments for their courses
+class AssignmentListCreateView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = AssignmentSerializer
+
+    def get_queryset(self):
+        teacher_id = self.request.query_params.get('teacher')
+        course_id = self.request.query_params.get('course')
+
+        queryset = models.Assignment.objects.all()
+        if teacher_id:
+            queryset = queryset.filter(created_by_id=teacher_id)
+        if course_id:
+            queryset = queryset.filter(course_id=course_id)
+
+        return queryset.order_by('-created_at')
+
+
+# Retrieve / Update / Delete a specific assignment
+class AssignmentDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = models.Assignment.objects.all()
+    serializer_class = AssignmentSerializer
+
+
+# Student submits assignment
+class AssignmentSubmissionListCreateView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = AssignmentSubmissionSerializer
+
+    def get_queryset(self):
+        assignment_id = self.request.query_params.get('assignment')
+        student_id = self.request.query_params.get('student')
+
+        queryset = models.AssignmentSubmission.objects.all()
+        if assignment_id:
+            queryset = queryset.filter(assignment_id=assignment_id)
+        if student_id:
+            queryset = queryset.filter(student_id=student_id)
+
+        return queryset.order_by('-submitted_at')
+
+
+# Retrieve / Update / Delete submission
+class AssignmentSubmissionDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = models.AssignmentSubmission.objects.all()
+    serializer_class = AssignmentSubmissionSerializer
+
+class CourseAssignmentsList(generics.ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = AssignmentSerializer
+
+    def get_queryset(self):
+        course_id = self.kwargs['course_id']
+        return models.Assignment.objects.filter(course_id=course_id).order_by("-id")
+
+
+class AssignmentSubmissionsList(generics.ListAPIView):
+    permission_classes = [IsAuthenticated]
+    """Return all student submissions for a specific assignment"""
+    serializer_class = AssignmentSubmissionSerializer
+
+    def get_queryset(self):
+        assignment_id = self.kwargs["assignment_id"]
+        return models.AssignmentSubmission.objects.filter(assignment_id=assignment_id).order_by("-submitted_at")
+    
+class GradeSubmission(generics.UpdateAPIView):
+    permission_classes = [IsAuthenticated]
+    """Allows teacher to update grade and feedback for a student submission"""
+    queryset = models.AssignmentSubmission.objects.all()
+    serializer_class = AssignmentSubmissionSerializer
+
+class ChapterProgressView(APIView):
+    permission_classes = [IsAuthenticated]
+    def post(self, request):
+        student_id = request.data.get("student")
+        chapter_id = request.data.get("chapter")
+
+        if not student_id or not chapter_id:
+            return Response({"error": "student and chapter required"}, status=400)
+
+        progress, created = models.ChapterProgress.objects.get_or_create(
+            student_id=student_id, chapter_id=chapter_id
+        )
+        progress.completed = True
+        progress.save()
+
+        return Response({"message": "Progress updated"})
+
+class StudentCourseProgress(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request, student_id, course_id):
+        total_chapters = models.Chapter.objects.filter(course_id=course_id).count()
+        completed_chapters = models.ChapterProgress.objects.filter(
+            student_id=student_id, chapter__course_id=course_id, completed=True
+        ).count()
+
+        progress_percent = (
+            (completed_chapters / total_chapters) * 100 if total_chapters > 0 else 0
+        )
+        return Response({
+            "total_chapters": total_chapters,
+            "completed": completed_chapters,
+            "progress": round(progress_percent, 1)
+        })
+
+from rest_framework import generics, status
+from rest_framework.response import Response
+from .models import Quiz, Question, QuizAttempt, StudentAnswer
+from .serialize import QuizSerializer, QuestionSerializer, QuizAttemptSerializer, StudentAnswerSerializer
+
+# Teacher adds and views quizzes per course
+class QuizListCreateView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = QuizSerializer
+
+    def get_queryset(self):
+        course_id = self.request.query_params.get('course')
+        return Quiz.objects.filter(course_id=course_id).order_by('-id')
+
+
+# view or delete a specific quiz
+class QuizDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAuthenticated]
+    queryset = Quiz.objects.all()
+    serializer_class = QuizSerializer
+
+
+# Add questions to a quiz
+class QuestionListCreateView(generics.ListCreateAPIView):
+    serializer_class = QuestionSerializer
+
+    def get_queryset(self):
+        quiz_id = self.request.query_params.get('quiz')
+        return Question.objects.filter(quiz_id=quiz_id)
+
+
+# Student attempts quiz
+# Student can submit AND view quiz attempts
+class QuizAttemptListCreateView(generics.ListCreateAPIView):
+    serializer_class = QuizAttemptSerializer
+
+    def get_queryset(self):
+        queryset = QuizAttempt.objects.all()
+        student_id = self.request.query_params.get("student")
+        quiz_id = self.request.query_params.get("quiz")
+
+        if student_id:
+            queryset = queryset.filter(student_id=student_id)
+        if quiz_id:
+            queryset = queryset.filter(quiz_id=quiz_id)
+
+     
+        return queryset.order_by("-submitted_at")
+
+
+    def create(self, request, *args, **kwargs):
+        student = request.data.get("student")
+        quiz = request.data.get("quiz")
+        answers = request.data.get("answers", [])
+
+        if not student or not quiz:
+            return Response({"error": "Missing student or quiz ID"}, status=status.HTTP_400_BAD_REQUEST)
+
+        total_questions = len(answers)
+        correct_answers = 0
+
+        for ans in answers:
+            try:
+                question = Question.objects.get(id=ans["question"])
+                if ans["selected_option"] == question.correct_option:
+                    correct_answers += 1
+            except Question.DoesNotExist:
+                continue
+
+        score = (correct_answers / total_questions) * 100 if total_questions > 0 else 0
+
+        # Create new attempt
+        attempt = QuizAttempt.objects.create(
+            quiz_id=quiz,
+            student_id=student,
+            score=score,
+            completed=True,
+        )
+
+        for ans in answers:
+            StudentAnswer.objects.create(
+                attempt=attempt,
+                question_id=ans["question"],
+                selected_option=ans["selected_option"],
+            )
+
+        return Response(
+            {"message": "Quiz submitted successfully", "score": score},
+            status=status.HTTP_201_CREATED,
+        )
+
+# List all attempts for a given quiz (for teacher view)
+class QuizAttemptsListView(generics.ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = QuizAttemptSerializer
+
+    def get_queryset(self):
+        quiz_id = self.kwargs["quiz_id"]
+        return QuizAttempt.objects.filter(quiz_id=quiz_id).select_related("student").order_by("-submitted_at")
+
+
+
+class DiscussionListCreateView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = DiscussionSerializer
+
+    def get_queryset(self):
+        course_id = self.request.query_params.get("course")
+        return models.Discussion.objects.filter(course_id=course_id).order_by("-created_at")
+
+
+from django.db.models import Q
+
+class GlobalSearchView(APIView):
+    """
+    Search for Courses or Teachers globally
+    Example: /api/search/?q=python
+    """
+    permission_classes = [AllowAny]
+    def get(self, request):
+        query = request.GET.get("q", "").strip()
+        if not query:
+            return Response({"courses": [], "teachers": []})
+
+        # Search Courses
+        courses = models.Course.objects.filter(
+            Q(title__icontains=query) |
+            Q(description__icontains=query) |
+            Q(techs__icontains=query)
+        )
+
+        # Search Teachers
+        teachers = models.Teacher.objects.filter(
+            Q(full_name__icontains=query) |
+            Q(skills__icontains=query)
+        )
+
+        course_data = courseSerializer(courses, many=True).data
+        teacher_data = teacherSerializer(teachers, many=True).data
+
+        return Response({
+            "courses": course_data,
+            "teachers": teacher_data
+        })
+    
+class HomePageView(APIView):
+    permission_classes = [AllowAny]
+    def get(self, request):
+        from django.db.models import Count
+
+        popular_courses = (
+            models.Course.objects.annotate(num_students=Count("studentcourseenrollment"))
+            .order_by("-num_students")[:4]
+        )
+        latest_courses = models.Course.objects.order_by("-id")[:4]
+        popular_teachers = (
+            models.Teacher.objects.annotate(
+                total_students=Count("teacher_courses__studentcourseenrollment", distinct=True)
+            )
+            .order_by("-total_students")[:4]
+        )
+
+        data = {
+            "popular_courses": courseSerializer(popular_courses, many=True).data,
+            "latest_courses": courseSerializer(latest_courses, many=True).data,
+            "popular_teachers": teacherSerializer(popular_teachers, many=True).data,
+        }
+        return Response(data)

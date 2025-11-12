@@ -1,5 +1,6 @@
 from django.db import models
 from django.core import serializers
+from django.contrib.auth.hashers import make_password, check_password
 
 class Teacher(models.Model):
     full_name=models.CharField(max_length=100)
@@ -63,6 +64,11 @@ class Student(models.Model):
     password=models.CharField(max_length=100)
     username=models.CharField(max_length=50)
     interested_categories=models.TextField()
+    
+    def save(self, *args, **kwargs):
+        if not self.pk or not self.password.startswith("pbkdf2_"):
+            self.password = make_password(self.password)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.full_name
@@ -103,3 +109,121 @@ class CourseRating(models.Model):
 
     def __str__(self):
         return f"{self.student} rated {self.course} - {self.rating}"
+    
+
+
+# 7. Assignment and Submissions
+class Assignment(models.Model):
+    course = models.ForeignKey(
+        Course, on_delete=models.CASCADE, related_name='assignments'
+    )
+    created_by = models.ForeignKey(
+        Teacher, on_delete=models.CASCADE, related_name='teacher_assignments'
+    )
+    title = models.CharField(max_length=255)
+    description = models.TextField()
+    due_date = models.DateTimeField()
+    file = models.FileField(upload_to='assignments/', null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = "7. Assignments"
+
+    def __str__(self):
+        return f"{self.title} ({self.course.title})"
+
+
+class AssignmentSubmission(models.Model):
+    assignment = models.ForeignKey(
+        Assignment, on_delete=models.CASCADE, related_name='submissions'
+    )
+    student = models.ForeignKey(Student, on_delete=models.CASCADE)
+    submitted_file = models.FileField(upload_to='submissions/')
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    grade = models.CharField(max_length=10, null=True, blank=True)
+    feedback = models.TextField(null=True, blank=True)
+
+    class Meta:
+        verbose_name_plural = "8. Assignment Submissions"
+        unique_together = ('assignment', 'student')
+
+    def __str__(self):
+        return f"{self.assignment.title} - {self.student.full_name}"
+    
+class ChapterProgress(models.Model):
+    student = models.ForeignKey(Student, on_delete=models.CASCADE)
+    chapter = models.ForeignKey(Chapter, on_delete=models.CASCADE)
+    completed = models.BooleanField(default=False)
+    completed_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+
+    class Meta:
+        unique_together = ('student', 'chapter')
+
+    def __str__(self):
+        return f"{self.student.full_name} - {self.chapter.title}"
+
+
+
+
+#for quiz portal 
+
+class Quiz(models.Model):
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="quizzes")
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.title
+
+
+class Question(models.Model):
+    quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name="questions")
+    question_text = models.TextField()
+    option1 = models.CharField(max_length=255)
+    option2 = models.CharField(max_length=255)
+    option3 = models.CharField(max_length=255)
+    option4 = models.CharField(max_length=255)
+    correct_option = models.CharField(max_length=255)
+
+    def __str__(self):
+        return self.question_text
+
+
+class QuizAttempt(models.Model):
+    quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE)
+    student = models.ForeignKey(Student, on_delete=models.CASCADE)
+    score = models.FloatField(default=0)
+    completed = models.BooleanField(default=False)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.student.full_name} - {self.quiz.title}"
+
+
+class StudentAnswer(models.Model):
+    attempt = models.ForeignKey(QuizAttempt, on_delete=models.CASCADE, related_name="answers")
+    question = models.ForeignKey(Question, on_delete=models.CASCADE)
+    selected_option = models.CharField(max_length=255)
+
+    def __str__(self):
+        return f"{self.attempt.student.full_name} - {self.question.question_text[:30]}"
+
+
+#for discussion forum
+class Discussion(models.Model):
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="discussions")
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, null=True, blank=True)
+    teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE, null=True, blank=True)
+    content = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def user_name(self):
+        if self.student:
+            return self.student.full_name
+        elif self.teacher:
+            return self.teacher.full_name
+        return "Unknown User"
+
+    def __str__(self):
+        return f"{self.course.title} - {self.user_name()}"
