@@ -1,6 +1,6 @@
 from django.shortcuts import render
 from rest_framework.views import APIView
-from .serialize import studentCourseEnrollmentSerializer, teacherSerializer,courseCategorySerializer,courseSerializer,chapterSerializer,studentSerializer,CourseRatingSerializer,AssignmentSerializer, AssignmentSubmissionSerializer , DiscussionSerializer
+from .serialize import studentCourseEnrollmentSerializer,LectureNoteSerializer,FavoriteCourseSerializer, teacherSerializer,courseCategorySerializer,courseSerializer,chapterSerializer,studentSerializer,CourseRatingSerializer,AssignmentSerializer, AssignmentSubmissionSerializer , DiscussionSerializer
 from rest_framework.response import Response
 from rest_framework import generics
 from rest_framework import permissions
@@ -9,9 +9,15 @@ from django.views.decorators.csrf import csrf_exempt
 from . import models
 from .models import Student
 from django.db.models import Avg
+import json
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from django.contrib.auth.hashers import check_password
+from django.contrib.auth.hashers import make_password, check_password
+from .custom_auth import CustomJWTAuthentication
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from django.utils import timezone
+
 # class teacherList(APIView):
 #     def get(self,request):
 #         teachers=models.Teacher.objects.all()
@@ -31,16 +37,32 @@ class teacherDetail(generics.RetrieveUpdateDestroyAPIView):
     #permission_classes=[permissions.IsAuthenticated]
 @csrf_exempt
 def teacher_login(request):
-    email=request.POST['email']
-    password=request.POST['password']
+    """
+    Expect JSON body: {"email": "x@x.com", "password": "secret"}
+    Returns: {"bool": True, "teacher_id": id} on success
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
     try:
-        teacherData=models.Teacher.objects.get(email=email,password=password)
+        body = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    email = body.get("email")
+    password = body.get("password")
+
+    if not email or not password:
+        return JsonResponse({"error": "email and password are required"}, status=400)
+
+    try:
+        teacher = models.Teacher.objects.get(email=email)
     except models.Teacher.DoesNotExist:
-        teacherData=None
-    if teacherData:
-        return JsonResponse({'bool':True,'teacher_id':teacherData.id})
-    else:
-        return JsonResponse({'bool':False})
+        return JsonResponse({"bool": False, "msg": "Invalid credentials"}, status=401)
+
+    if check_password(password, teacher.password):
+        return JsonResponse({"bool": True, "teacher_id": teacher.id})
+    return JsonResponse({"bool": False, "msg": "Invalid credentials"}, status=401)
 
 class CategoryList(generics.ListCreateAPIView):
     queryset=models.CourseCategory.objects.all()
@@ -50,22 +72,21 @@ class CategoryList(generics.ListCreateAPIView):
 class CourseList(generics.ListCreateAPIView):
     serializer_class = courseSerializer
     permission_classes=[AllowAny]
+
     def get_queryset(self):
         qs = models.Course.objects.all()
-
         category = self.request.GET.get('category')
-        skill = self.request.GET.get('skill')   
-        teacher = self.request.GET.get('teacher')  
+        skill = self.request.GET.get('skill')
+        teacher = self.request.GET.get('teacher')
 
         if category:
             qs = qs.filter(category__title__icontains=category)
-
-        if skill and teacher:
-            qs = qs.filter(
-                techs__icontains=skill,
-                Teacher_id=teacher              
-            )
+        if skill:
+            qs = qs.filter(techs__icontains=skill)
+        if teacher:
+            qs = qs.filter(Teacher_id=teacher)
         return qs
+
 class CourseDetail(generics.RetrieveUpdateDestroyAPIView):
     queryset=models.Course.objects.all()
     serializer_class=courseSerializer
@@ -189,10 +210,13 @@ class CourseAverageRating(APIView):
         avg = models.CourseRating.objects.filter(course_id=course_id).aggregate(avg_rating=Avg('rating'))
         return Response({"average_rating": avg['avg_rating'] or 0})
 class CourseReviews(APIView):
+    permission_classes = [AllowAny]  # or IsAuthenticated if you require login
+
     def get(self, request, course_id):
-        data = models.CourseRating.objects.filter(course_id=course_id).order_by('-created_at')
-        serializer = CourseRatingSerializer(data, many=True)
+        qs = models.CourseRating.objects.filter(course_id=course_id).order_by('-created_at')
+        serializer = CourseRatingSerializer(qs, many=True)
         return Response(serializer.data)
+
 class DeleteReview(APIView):
     def delete(self, request, id):
         review = models.CourseRating.objects.filter(id=id).first()
@@ -218,21 +242,26 @@ class TeacherStudents(APIView):
 
 
 class TeacherChangePassword(APIView):
+    permission_classes = [IsAuthenticated]
+
     def post(self, request, teacher_id):
         old_password = request.data.get("old_password")
         new_password = request.data.get("new_password")
 
+        if not old_password or not new_password:
+            return Response({"error": "old_password and new_password are required"}, status=400)
+
         try:
             teacher = models.Teacher.objects.get(id=teacher_id)
         except models.Teacher.DoesNotExist:
-            return Response({"error": "Teacher not found"})
+            return Response({"error": "Teacher not found"}, status=404)
 
-        if teacher.password != old_password:
-            return Response({"error": "Old password is incorrect"})
+        if not check_password(old_password, teacher.password):
+            return Response({"error": "Old password is incorrect"}, status=400)
 
-        teacher.password = new_password
+        teacher.password = make_password(new_password)
         teacher.save()
-        return Response({"message": "Password changed successfully"})
+        return Response({"message": "Password changed successfully"}, status=200)
     
 #teacher Dashboard
 class TeacherDashboard(APIView):
@@ -256,12 +285,22 @@ class TeacherDashboard(APIView):
             "total_students": total_students,
             "avg_rating": round(avg_rating, 2),
         })
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from .models import StudentCourseEnrollment
+from .serialize import courseSerializer
 
-#for getting all courses a student is enrolled in
+
 class StudentEnrolledCourses(APIView):
+    authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsAuthenticated]
+
     def get(self, request, student_id):
-        enrollments = models.StudentCourseEnrollment.objects.filter(student_id=student_id)
+        # Using the authenticated user (from token)
+        user_id = request.user.id
+        enrollments = StudentCourseEnrollment.objects.filter(student_id=user_id)
         courses = [enrollment.course for enrollment in enrollments]
         serializer = courseSerializer(courses, many=True)
         return Response(serializer.data)
@@ -438,7 +477,6 @@ class QuizAttemptListCreateView(generics.ListCreateAPIView):
      
         return queryset.order_by("-submitted_at")
 
-
     def create(self, request, *args, **kwargs):
         student = request.data.get("student")
         quiz = request.data.get("quiz")
@@ -447,6 +485,35 @@ class QuizAttemptListCreateView(generics.ListCreateAPIView):
         if not student or not quiz:
             return Response({"error": "Missing student or quiz ID"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # 1️⃣ CHECK FOR EXISTING ATTEMPT (quiz start time)
+        try:
+            attempt = QuizAttempt.objects.get(
+                quiz_id=quiz,
+                student_id=student,
+                completed=False
+            )
+        except QuizAttempt.DoesNotExist:
+            return Response({"error": "Attempt not found or expired"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 2️⃣ CHECK IF TIME IS OVER
+        quiz_obj = attempt.quiz
+        allowed_seconds = quiz_obj.duration_minutes * 60
+
+        elapsed_seconds = (timezone.now() - attempt.started_at).total_seconds()
+
+        if quiz_obj.enforce_time and elapsed_seconds > allowed_seconds:
+            # Force end + block submission
+            attempt.completed = True
+            attempt.ended_at = timezone.now()
+            attempt.score = 0
+            attempt.save()
+
+            return Response(
+                {"error": "Time is over. Your quiz was auto-submitted."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 3️⃣ NORMAL SCORING
         total_questions = len(answers)
         correct_answers = 0
 
@@ -460,14 +527,13 @@ class QuizAttemptListCreateView(generics.ListCreateAPIView):
 
         score = (correct_answers / total_questions) * 100 if total_questions > 0 else 0
 
-        # Create new attempt
-        attempt = QuizAttempt.objects.create(
-            quiz_id=quiz,
-            student_id=student,
-            score=score,
-            completed=True,
-        )
+        # 4️⃣ UPDATE THE EXISTING ATTEMPT (not create new)
+        attempt.score = score
+        attempt.completed = True
+        attempt.ended_at = timezone.now()
+        attempt.save()
 
+        # 5️⃣ SAVE STUDENT ANSWERS
         for ans in answers:
             StudentAnswer.objects.create(
                 attempt=attempt,
@@ -476,9 +542,14 @@ class QuizAttemptListCreateView(generics.ListCreateAPIView):
             )
 
         return Response(
-            {"message": "Quiz submitted successfully", "score": score},
-            status=status.HTTP_201_CREATED,
+            {
+                "message": "Quiz submitted successfully",
+                "score": score,
+                "time_taken_seconds": elapsed_seconds
+            },
+            status=status.HTTP_200_OK,
         )
+
 
 # List all attempts for a given quiz (for teacher view)
 class QuizAttemptsListView(generics.ListAPIView):
@@ -557,3 +628,186 @@ class HomePageView(APIView):
             "popular_teachers": teacherSerializer(popular_teachers, many=True).data,
         }
         return Response(data)
+
+class FavoriteCourseListCreateView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = FavoriteCourseSerializer
+
+    def get_queryset(self):
+        student_id = self.kwargs['student_id']
+        return models.FavoriteCourse.objects.filter(student_id=student_id).order_by('-added_at')
+
+class RemoveFavoriteCourse(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, student_id, course_id):
+        fav = models.FavoriteCourse.objects.filter(student_id=student_id, course_id=course_id).first()
+        if fav:
+            fav.delete()
+            return Response({"message": "Removed from favorites"})
+        return Response({"error": "Favorite not found"}, status=404)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def check_favorite(request):
+    student = request.GET.get("student")
+    course = request.GET.get("course")
+
+    exists = models.FavoriteCourse.objects.filter(
+        student_id=student,
+        course_id=course
+    ).exists()
+
+    return Response({"is_favorite": exists})
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def add_favorite(request):
+    student = request.data.get("student")
+    course = request.data.get("course")
+
+    exists = models.FavoriteCourse.objects.filter(
+        student_id=student, course_id=course
+    ).exists()
+
+    if exists:
+        return Response({"message": "Already in favorites"}, status=200)
+
+    models.FavoriteCourse.objects.create(student_id=student, course_id=course)
+    return Response({"message": "Added to favorites"}, status=201)
+
+@api_view(['DELETE'])
+def remove_favorite(request):
+    student = request.GET.get('student')
+    course = request.GET.get('course')
+
+    fav = models.FavoriteCourse.objects.filter(student_id=student, course_id=course).first()
+    if fav:
+        fav.delete()
+        return Response({"message": "Removed from favorites"}, status=200)
+
+    return Response({"error": "Not found"}, status=404)
+
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from django.contrib.auth.hashers import check_password
+from rest_framework.response import Response
+from rest_framework import status
+
+class StudentChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, student_id):
+        old_pw = request.data.get("old_password")
+        new_pw = request.data.get("new_password")
+
+        try:
+            student = models.Student.objects.get(id=student_id)
+        except models.Student.DoesNotExist:
+            return Response({"error": "Student not found"}, status=404)
+
+        # Verify old password
+        if not check_password(old_pw, student.password):
+            return Response({"error": "Incorrect old password"}, status=400)
+
+        # Set new password correctly
+        student.password = make_password(new_pw)
+        student.save()
+
+        return Response({"message": "Password updated successfully"}, status=200)
+
+class LectureNoteListCreateView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = LectureNoteSerializer
+
+    def get_queryset(self):
+        chapter_id = self.request.query_params.get("chapter")
+        if not chapter_id:
+            return models.LectureNote.objects.none()
+        return models.LectureNote.objects.filter(chapter_id=chapter_id).order_by("-uploaded_at")
+
+class LectureNoteDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = models.LectureNote.objects.all()
+    serializer_class = LectureNoteSerializer
+
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from .models import Student
+from .serialize import courseSerializer
+from .utils.recommender import recommend_courses_for_student
+
+class RecommendedCourses(APIView):
+    def get(self, request, student_id):
+        try:
+            student = Student.objects.get(id=student_id)
+        except Student.DoesNotExist:
+            return Response({"error": "Student not found"}, status=404)
+
+        recommended = recommend_courses_for_student(student)
+
+        serialized = courseSerializer(recommended, many=True)
+        return Response(serialized.data, status=200)
+
+from rest_framework import generics
+from .models import Student
+from .serialize import studentSerializer
+
+class StudentDetail(generics.RetrieveUpdateAPIView):
+    queryset = Student.objects.all()
+    serializer_class = studentSerializer
+class StartQuizView(APIView):
+    def post(self, request):
+        quiz_id = request.data.get("quiz")
+        student_id = request.data.get("student")
+
+        # 1CHECK IF STUDENT ALREADY COMPLETED THE QUIZ
+        completed_attempt = QuizAttempt.objects.filter(
+            quiz_id=quiz_id,
+            student_id=student_id,
+            completed=True
+        ).first()
+
+        if completed_attempt:
+            return Response(
+                {
+                    "already_attempted": True,
+                    "score": completed_attempt.score,
+                    "submitted_at": completed_attempt.submitted_at,
+                },
+                status=200
+            )
+
+        # 2CHECK IF STUDENT HAS AN ACTIVE (NOT FINISHED) ATTEMPT
+        active_attempt = QuizAttempt.objects.filter(
+            quiz_id=quiz_id,
+            student_id=student_id,
+            completed=False
+        ).first()
+
+        if active_attempt:
+            return Response(
+                {
+                    "attempt_id": active_attempt.id,
+                    "started_at": active_attempt.started_at,
+                    "already_attempted": False
+                },
+                status=200
+            )
+
+        # 3NO ATTEMPT EXISTS → CREATE FIRST ATTEMPT
+        new_attempt = QuizAttempt.objects.create(
+            quiz_id=quiz_id,
+            student_id=student_id,
+        )
+
+        return Response(
+            {
+                "attempt_id": new_attempt.id,
+                "started_at": new_attempt.started_at,
+                "already_attempted": False
+            },
+            status=200
+        )
+
+
+

@@ -1,11 +1,22 @@
 from django.db import models
 from django.core import serializers
 from django.contrib.auth.hashers import make_password, check_password
+from datetime import timedelta
+from django.utils import timezone
 
 class Teacher(models.Model):
+
+    @property
+    def is_authenticated(self):
+        return True
+
+    @property
+    def is_active(self):
+        return True
+
     full_name=models.CharField(max_length=100)
     details=models.TextField(null=True)
-    email=models.CharField(max_length=100)
+    email=models.CharField(max_length=100,unique=True)
     password=models.CharField(max_length=100)
     qualification=models.CharField(max_length=200)
     mobile_no=models.CharField(max_length=20)
@@ -19,6 +30,14 @@ class Teacher(models.Model):
         if self.skills:
             return self.skills.split(',')
         return []
+
+    def save(self, *args, **kwargs):
+        if not self.password.startswith("pbkdf2_"):
+            self.password = make_password(self.password)
+        super().save(*args, **kwargs)
+
+
+
 class CourseCategory(models.Model):
     title=models.CharField(max_length=150)
     description=models.TextField()
@@ -57,21 +76,30 @@ class Course(models.Model):
         total_enrolled_students=StudentCourseEnrollment.objects.filter(course=self).count()
         return total_enrolled_students
         
-
 class Student(models.Model):
+    @property
+    def is_authenticated(self):
+        return True
+
+    @property
+    def is_active(self):
+        return True
+
     full_name=models.CharField(max_length=100)
-    email=models.CharField(max_length=100)
+    email=models.CharField(max_length=100,unique=True)
     password=models.CharField(max_length=100)
-    username=models.CharField(max_length=50)
+    username=models.CharField(max_length=50,unique=True)
     interested_categories=models.TextField()
     
     def save(self, *args, **kwargs):
-        if not self.pk or not self.password.startswith("pbkdf2_"):
+        if not self.password.startswith("pbkdf2_"):
+            from django.contrib.auth.hashers import make_password
             self.password = make_password(self.password)
         super().save(*args, **kwargs)
 
     def __str__(self):
         return self.full_name
+
     class Meta:
         verbose_name_plural="4. Student"
 
@@ -170,6 +198,10 @@ class ChapterProgress(models.Model):
 class Quiz(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="quizzes")
     title = models.CharField(max_length=200)
+    duration_minutes = models.PositiveIntegerField(default=10)  
+
+    # NEW — optional: hard expiry time after quiz starts
+    enforce_time = models.BooleanField(default=True)
     description = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -195,6 +227,8 @@ class QuizAttempt(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
     score = models.FloatField(default=0)
     completed = models.BooleanField(default=False)
+    started_at = models.DateTimeField(auto_now_add=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
     submitted_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -227,3 +261,46 @@ class Discussion(models.Model):
 
     def __str__(self):
         return f"{self.course.title} - {self.user_name()}"
+
+class FavoriteCourse(models.Model):
+    student = models.ForeignKey(Student, on_delete=models.CASCADE)
+    course = models.ForeignKey(Course, on_delete=models.CASCADE)
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('student', 'course')
+
+    def __str__(self):
+        return f"{self.student.username} {self.course.title}"
+
+
+
+
+class PasswordResetOTP(models.Model):
+    email = models.CharField(max_length=150)
+    otp = models.CharField(max_length=10)
+    user_type = models.CharField(max_length=20)  # "student" / "teacher"
+    user_id = models.IntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    verified = models.BooleanField(default=False)
+    used = models.BooleanField(default=False)
+
+    def is_expired(self):
+        return timezone.now() > self.expires_at
+
+    def __str__(self):
+        return f"{self.email} - {self.otp}"
+
+class LectureNote(models.Model):
+    chapter = models.ForeignKey(Chapter, on_delete=models.CASCADE, related_name='lecture_notes')
+    title = models.CharField(max_length=200)
+    file = models.FileField(upload_to="lecture_notes/", null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = "Lecture Notes"
+
+    def __str__(self):
+        return f"{self.title} ({self.chapter.title})"

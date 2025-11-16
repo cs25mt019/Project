@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 from . import auth_views
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 
 urlpatterns = [
@@ -23,8 +24,8 @@ urlpatterns = [
 
     path("teacher-course-detail/<int:pk>/", views.TeacherCourseDetail.as_view()),
 
-    path('student/', views.StudentList.as_view()),
-     path("student/login/", views.StudentLogin.as_view()),
+   # path('student/', views.StudentList.as_view()),
+    # path("student/login/", views.StudentLogin.as_view()),
     
    path('student-enroll-course/', views.StudentEnrollCourseList.as_view()),
     path('fetch-enrolled-students/<int:course_id>/', views.EnrolledStudentsList.as_view()),
@@ -90,5 +91,27 @@ urlpatterns = [
 
     # Common Logout
     path("auth/logout/", auth_views.LogoutView.as_view(), name="logout"),
+
+    #path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    #path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('favorites/<int:student_id>/', views.FavoriteCourseListCreateView.as_view()),
+    path('favorites/remove/<int:student_id>/<int:course_id>/', views.RemoveFavoriteCourse.as_view()),
+    path("check-favorite/", views.check_favorite, name="check_favorite"),
+    path("add-favorite/", views.add_favorite, name="add_favorite"),
+    path("remove-favorite/", views.remove_favorite, name="remove_favorite"),
+    path("student-change-password/<int:student_id>/", views.StudentChangePasswordView.as_view()),
+
+    path("auth/request-reset-otp/", auth_views.RequestResetOTP.as_view()),
+    path("auth/verify-reset-otp/", auth_views.VerifyResetOTP.as_view()),
+    path("auth/reset-password/", auth_views.ResetPassword.as_view()),
+
+    # Lecture Notes
+path("lecture-notes/", views.LectureNoteListCreateView.as_view()),
+path("lecture-notes/<int:pk>/", views.LectureNoteDetailView.as_view()),
+
+path("recommended-courses/<int:student_id>/", views.RecommendedCourses.as_view()),
+path("student/<int:pk>/", views.StudentDetail.as_view()),
+path("start-quiz/", views.StartQuizView.as_view(), name="start-quiz"),
+
 
 ]
