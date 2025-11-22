@@ -1,0 +1,460 @@
+#include <bits/stdc++.h>
+using namespace std;
+
+int checkvertex(const vector<vector<int>> &graph, const vector<vector<int>> &bags)
+{
+    int n = graph.size();
+    vector<int> seen(n, 0);
+    for (int i = 0; i < (int)bags.size(); ++i)
+        for (int v : bags[i]) seen[v] = 1;
+    for (int v = 0; v < n; ++v) if (!seen[v]) return 0;
+    return 1;
+}
+
+int checkedges(const vector<vector<int>> &graph, const vector<vector<int>> &bags)
+{
+    int n = graph.size();
+    for (int i = 0; i < n; ++i)
+        for (int j = 0; j < n; ++j)
+            if (graph[i][j]) {
+                bool ok = false;
+                for (int b = 0; b < (int)bags.size(); ++b) {
+                    bool hi = false, hj = false;
+                    for (int x : bags[b]) { if (x == i) hi = true; if (x == j) hj = true; }
+                    if (hi && hj) { ok = true; break; }
+                }
+                if (!ok) {
+                    cout << " Edge (" << i << ", " << j << ") not found in any bag!\n";
+                    return 0;
+                }
+            }
+    return 1;
+}
+
+int checksubtree_nicedecomposition(const vector<vector<int>> &bags, const vector<pair<int,int>> &edges, int n)
+{
+    int B = bags.size();
+    vector<vector<int>> check_bags(n);
+    for (int i = 0; i < B; ++i)
+        for (int v : bags[i]) check_bags[v].push_back(i);
+
+    vector<vector<int>> tree(B);
+    for (auto &e : edges) { tree[e.first].push_back(e.second); tree[e.second].push_back(e.first); }
+
+    // each vertex's bag indices must form a connected set
+    for (int v = 0; v < n; ++v) {
+        if (check_bags[v].size() <= 1) continue;
+        vector<int> marked(B, 0);
+        queue<int> q;
+        int start = check_bags[v][0];
+        marked[start] = 1; q.push(start);
+        while (!q.empty()) {
+            int cur = q.front(); q.pop();
+            for (int nb : tree[cur]) {
+                bool hasv = false;
+                for (int x : bags[nb]) if (x == v) { hasv = true; break; }
+                if (hasv && !marked[nb]) { marked[nb] = 1; q.push(nb); }
+            }
+        }
+        for (int idx : check_bags[v]) if (!marked[idx]) {
+            cout << "The bags containing the vertex " << v << " do not induce a tree\n";
+            return 0;
+        }
+    }
+
+    // Root tree at 0, build children
+    vector<int> parent(B, -1);
+    vector<vector<int>> children(B);
+    queue<int> qq;
+    parent[0] = 0; qq.push(0);
+    while (!qq.empty()) {
+        int u = qq.front(); qq.pop();
+        for (int v : tree[u]) if (parent[v] == -1) {
+            parent[v] = u;
+            children[u].push_back(v);
+            qq.push(v);
+        }
+    }
+
+    // Check nice decomposition structural rules
+    int flag = 1;
+    for (int i = 0; i < B; ++i) {
+        if (children[i].empty()) {
+            if (!bags[i].empty()) { cout << "Leaf " << i << " not empty\n"; flag = 0; }
+        } else if (children[i].size() == 1) {
+            int c = children[i][0];
+            // compute differences without sets: linear comparisons
+            int diff1 = 0, diff2 = 0;
+            for (int x : bags[i]) {
+                bool inc = false;
+                for (int y : bags[c]) if (x == y) { inc = true; break; }
+                if (!inc) ++diff1;
+            }
+            for (int x : bags[c]) {
+                bool inip = false;
+                for (int y : bags[i]) if (x == y) { inip = true; break; }
+                if (!inip) ++diff2;
+            }
+            if (!((diff1 == 1 && diff2 == 0) || (diff2 == 1 && diff1 == 0))) {
+                cout << "violation in nodes " << i << " " << c << " must differ by exactly one vertex.\n";
+                flag = 0;
+            }
+        } else if (children[i].size() == 2) {
+            int a = children[i][0], b = children[i][1];
+            if (!(bags[a] == bags[b] && bags[a] == bags[i])) {
+                cout << "invalid Join " << i << "\n";
+                flag = 0;
+            }
+        } else {
+            cout << "More than 2 childs\n";
+            flag = 0;
+        }
+    }
+    return flag;
+}
+
+// ---------- generate all subsets (as vectors) of a bag (sorted order) ----------
+void generate_subsets_of_bag(const vector<int> &bag, vector<vector<int>> &out_subsets) {
+    out_subsets.clear();
+    int k = bag.size();
+    int total = 1 << k; // k small in practice
+    out_subsets.reserve(total);
+    for (int m = 0; m < total; ++m) {
+        vector<int> subset;
+        subset.reserve(k);
+        for (int i = 0; i < k; ++i) if (m & (1<<i)) subset.push_back(bag[i]);
+        out_subsets.push_back(subset);
+    }
+}
+
+// ---------- Compare two small sorted vectors for equality ----------
+bool vec_equal(const vector<int> &a, const vector<int> &b) {
+    if (a.size() != b.size()) return false;
+    for (int i = 0; i < (int)a.size(); ++i) if (a[i] != b[i]) return false;
+    return true;
+}
+
+// ---------- Check if subset is independent (no edges among chosen vertices) ----------
+bool subset_is_independent(const vector<int> &subset, const vector<vector<int>> &graph) {
+    int s = subset.size();
+    for (int i = 0; i < s; ++i) {
+        for (int j = i+1; j < s; ++j) {
+            if (graph[ subset[i] ][ subset[j] ]) return false;
+        }
+    }
+    return true;
+}
+
+// ---------- DP on nice decomposition without masks ----------
+// back[node][sidx] = pair(childSubsetIndex, childSubsetIndex2). -1 = none.
+// dp[node][sidx] = best value
+int compute_MIS_no_masks(
+    const vector<vector<int>> &graph,
+    const vector<vector<int>> &bags,
+    const vector<pair<int,int>> &edges,
+    vector<vector<pair<int,int>>> &back,      // output backpointers per node, per subset index
+    vector<vector<int>> &dp_values            // output dp values per node, per subset index
+) {
+    int B = bags.size();
+    // build tree adjacency
+    vector<vector<int>> tree(B);
+    for (auto &e : edges) { tree[e.first].push_back(e.second); tree[e.second].push_back(e.first); }
+
+    // root at 0 -> build children
+    vector<int> parent(B, -1);
+    vector<vector<int>> children(B);
+    queue<int> q;
+    parent[0] = 0; q.push(0);
+    while (!q.empty()) {
+        int u = q.front(); q.pop();
+        for (int v : tree[u]) if (parent[v] == -1) {
+            parent[v] = u;
+            children[u].push_back(v);
+            q.push(v);
+        }
+    }
+
+    // postorder
+    vector<int> post;
+    function<void(int)> dfs = [&](int u) {
+        for (int v : children[u]) dfs(v);
+        post.push_back(u);
+    };
+    dfs(0);
+
+    // prepare subsets for every node
+    vector<vector<vector<int>>> subsets(B);
+    for (int i = 0; i < B; ++i) generate_subsets_of_bag(bags[i], subsets[i]);
+
+    // initialize dp and back
+    dp_values.assign(B, vector<int>());
+    back.assign(B, vector<pair<int,int>>());
+    for (int node : post) {
+        int k = subsets[node].size();
+        dp_values[node].assign(k, INT_MIN/4);
+        back[node].assign(k, {-2, -2}); // -2 means uninitialized
+    }
+
+    // process nodes bottom-up
+    for (int node : post) {
+        // precompute which subset indices are independent
+        int S = subsets[node].size();
+        vector<char> valid(S, 0);
+        for (int s = 0; s < S; ++s) {
+            if (subset_is_independent(subsets[node][s], graph)) valid[s] = 1;
+        }
+
+        if (children[node].empty()) {
+            // Leaf: dp = size(subset) for valid subsets
+            for (int s = 0; s < S; ++s) {
+                if (valid[s]) {
+                    dp_values[node][s] = subsets[node][s].size();
+                    back[node][s] = {-1, -1};
+                }
+            }
+            continue;
+        }
+
+        if (children[node].size() == 1) {
+            int ch = children[node][0];
+            int Sc = subsets[ch].size();
+
+            // Find relation by sizes
+            int bag_k = bags[node].size();
+            int bag_ch_k = bags[ch].size();
+
+            // For each parent subset s, we will find the best child subset(s) c that agree on intersection
+            for (int s = 0; s < S; ++s) {
+                if (!valid[s]) continue; // parent subset must be independent in parent bag
+                int best_val = INT_MIN/4;
+                int best_cidx = -1;
+
+                // we will loop over all child subsets and pick those that match on intersection
+                for (int c = 0; c < Sc; ++c) {
+                    if (dp_values[ch][c] <= INT_MIN/8) continue; // child invalid
+                    // Check: intersection(subsets[ch][c], bags[node]) == subsets[node][s]
+                    // But simpler: check that for every vertex in subsets[node][s], it exists in child subset if vertex is in child bag,
+                    // meaning: (subsets[node][s] ∩ childBag) == (subsets[ch][c] ∩ parentBag)
+                    // Implement: compute intersection of child subset with parent bag, compare to parent subset filtered to parent∩child
+                    // Simpler safe check: for every vertex in subsets[node][s] that belongs to child bag => it must appear in child subset.
+                    bool ok = true;
+                    // check vertices in parent subset that are in child bag must be in child subset
+                    for (int v : subsets[node][s]) {
+                        bool inChildBag = false;
+                        for (int x : bags[ch]) if (x == v) { inChildBag = true; break; }
+                        if (inChildBag) {
+                            bool presentInChildSubset = false;
+                            for (int x : subsets[ch][c]) if (x == v) { presentInChildSubset = true; break; }
+                            if (!presentInChildSubset) { ok = false; break; }
+                        }
+                    }
+                    if (!ok) continue;
+                    // also ensure child subset doesn't contain any vertex that is not consistent with parent subset:
+                    // for every vertex u in child subset that belongs to parent bag, it must be present in parent subset.
+                    for (int v : subsets[ch][c]) {
+                        bool inParentBag = false;
+                        for (int x : bags[node]) if (x == v) { inParentBag = true; break; }
+                        if (inParentBag) {
+                            bool presentInParentSubset = false;
+                            for (int x : subsets[node][s]) if (x == v) { presentInParentSubset = true; break; }
+                            if (!presentInParentSubset) { ok = false; break; }
+                        }
+                    }
+                    if (!ok) continue;
+
+                    // If we get here, child's subset is consistent with parent subset on intersection.
+                    // Now compute candidate value:
+                    // If parent bag is larger (introduce): parent may contain introduced vertex not in child -> parent's subset size may be larger than child's intersection.
+                    // dp_child already counts chosen vertices in child's subtree including vertices inside child bag.
+                    // The dp_parent value should be dp_child + (# vertices chosen in parent subset that are NOT in child subset).
+                    // Determine count of new chosen vertices: count elements in parent subset that are not in child subset.
+                    int newChosen = 0;
+                    for (int v : subsets[node][s]) {
+                        bool inChildSubset = false;
+                        for (int x : subsets[ch][c]) if (x == v) { inChildSubset = true; break; }
+                        if (!inChildSubset) ++newChosen;
+                    }
+                    int cand = dp_values[ch][c] + newChosen;
+                    if (cand > best_val) { best_val = cand; best_cidx = c; }
+                }
+
+                if (best_cidx != -1) {
+                    dp_values[node][s] = best_val;
+                    back[node][s] = {best_cidx, -1};
+                }
+            }
+        }
+        else if (children[node].size() == 2) {
+            int l = children[node][0], r = children[node][1];
+            int SL = subsets[l].size(), SR = subsets[r].size();
+            // For join nodes, child bags are equal to parent bag (in a nice decomposition), but we'll match by equality to be safe.
+            for (int s = 0; s < S; ++s) {
+                if (!valid[s]) continue;
+                // find index in left child where subset == subsets[node][s]
+                int idxL = -1, idxR = -1;
+                for (int i = 0; i < SL; ++i) if (vec_equal(subsets[l][i], subsets[node][s])) { idxL = i; break; }
+                for (int i = 0; i < SR; ++i) if (vec_equal(subsets[r][i], subsets[node][s])) { idxR = i; break; }
+                if (idxL == -1 || idxR == -1) continue;
+                if (dp_values[l][idxL] <= INT_MIN/8 || dp_values[r][idxR] <= INT_MIN/8) continue;
+                int tot = dp_values[l][idxL] + dp_values[r][idxR] - (int)subsets[node][s].size();
+                dp_values[node][s] = tot;
+                back[node][s] = {idxL, idxR};
+            }
+        }
+        else {
+            // more than 2 children -> not expected for nice decomposition
+            cerr << "Error: node with >2 children encountered\n";
+            return -1;
+        }
+    }
+
+    // answer at root
+    int root = 0;
+    int best = INT_MIN/4;
+    for (int s = 0; s < (int)dp_values[root].size(); ++s)
+        if (dp_values[root][s] > best) best = dp_values[root][s];
+    return best;
+}
+
+// ---------- Reconstruction (no sets) ----------
+// chosen[v] = whether v included in final MIS
+void reconstruct_no_masks(
+    int node, int sidx,
+    const vector<vector<int>> &bags,
+    const vector<pair<int,int>> &backptrs_flat, // flattened pointer array: not used; we'll pass structured back
+    const vector<vector<pair<int,int>>> &back,
+    const vector<vector<vector<int>>> &subsets,
+    const vector<vector<int>> &children, // children per node
+    vector<char> &chosen)
+{
+    // mark vertices in this node's subset
+    const vector<int> &subset = subsets[node][sidx];
+    for (int v : subset) chosen[v] = 1;
+
+    pair<int,int> bp = back[node][sidx];
+    if (bp.first == -2) return; // uninitialized (shouldn't happen)
+    if (bp.first == -1 && bp.second == -1) return; // leaf
+
+    if (children[node].empty()) return;
+    if (children[node].size() == 1) {
+        int ch = children[node][0];
+        int cidx = bp.first;
+        if (cidx != -1) {
+            // recurse
+            reconstruct_no_masks(ch, cidx, bags, backptrs_flat, back, subsets, children, chosen);
+        }
+    } else if (children[node].size() == 2) {
+        int l = children[node][0], r = children[node][1];
+        int il = bp.first, ir = bp.second;
+        if (il != -1) reconstruct_no_masks(l, il, bags, backptrs_flat, back, subsets, children, chosen);
+        if (ir != -1) reconstruct_no_masks(r, ir, bags, backptrs_flat, back, subsets, children, chosen);
+    }
+}
+
+// Helper to build children vector used for reconstruction
+vector<vector<int>> build_children(int B, const vector<pair<int,int>> &edges) {
+    vector<vector<int>> tree(B);
+    for (auto &e : edges) { tree[e.first].push_back(e.second); tree[e.second].push_back(e.first); }
+    vector<int> parent(B, -1);
+    vector<vector<int>> children(B);
+    queue<int> q;
+    parent[0] = 0; q.push(0);
+    while (!q.empty()) {
+        int u = q.front(); q.pop();
+        for (int v : tree[u]) if (parent[v] == -1) {
+            parent[v] = u;
+            children[u].push_back(v);
+            q.push(v);
+        }
+    }
+    return children;
+}
+
+// ---------- Main: reading files, running checks, computing DP and reconstructing ----------
+int main(int argc, char *argv[])
+{
+    if (argc < 3) {
+        cerr << "Usage: " << argv[0] << " graphfile bagsfile\n";
+        return 1;
+    }
+    string file1 = argv[1], file2 = argv[2];
+
+    // Read graph
+    ifstream f(file1);
+    if (!f) { cerr << "Cannot open " << file1 << "\n"; return 1; }
+    int n, m;
+    f >> n >> m;
+    vector<vector<int>> graph(n, vector<int>(n, 0));
+    for (int i = 0; i < m; ++i) {
+        int u,v; f >> u >> v;
+        graph[u][v] = graph[v][u] = 1;
+    }
+    f.close();
+
+    // Read bags
+    ifstream f2(file2);
+    if (!f2) { cerr << "Cannot open " << file2 << "\n"; return 1; }
+    int n_bag;
+    f2 >> n_bag;
+    vector<vector<int>> bags(n_bag);
+    for (int i = 0; i < n_bag; ++i) {
+        int id; char colon; f2 >> id >> colon;
+        string line; getline(f2, line);
+        stringstream ss(line);
+        int v;
+        while (ss >> v) bags[id].push_back(v);
+    }
+    vector<pair<int,int>> edges;
+    int a,b;
+    while (f2 >> a >> b) edges.push_back({a,b});
+    f2.close();
+
+    // Validations
+    if (!checkvertex(graph, bags)) { cout << "vertex property not found\n"; return 0; }
+    if (!checkedges(graph, bags)) { cout << "edges property not satisfied\n"; return 0; }
+    if (!checksubtree_nicedecomposition(bags, edges, n)) return 0;
+
+    // Print treewidth
+    int width = 0;
+    for (auto &bag : bags) width = max(width, (int)bag.size() - 1);
+    cout << width << "\n";
+
+    // Build children structure for reconstruction later
+    int B = bags.size();
+    vector<vector<int>> children = build_children(B, edges);
+
+    // Prepare subsets (needed for reconstruction too)
+    vector<vector<vector<int>>> subsets(B);
+    for (int i = 0; i < B; ++i) generate_subsets_of_bag(bags[i], subsets[i]);
+
+    // DP and backpointers
+    vector<vector<pair<int,int>>> back;
+    vector<vector<int>> dp_values;
+    int mis = compute_MIS_no_masks(graph, bags, edges, back, dp_values);
+    if (mis < 0) { cerr << "Error computing MIS\n"; return 1; }
+
+    // Find best root subset index
+    int root = 0;
+    int best_idx = -1, best_val = INT_MIN;
+    for (int s = 0; s < (int)dp_values[root].size(); ++s) {
+        if (dp_values[root][s] > best_val) { best_val = dp_values[root][s]; best_idx = s; }
+    }
+    if (best_idx == -1) { cout << "MIS size = 0\nVertices:\n"; return 0; }
+
+    // Reconstruct solution: chosen array to avoid duplicates
+    vector<char> chosen(n, 0);
+    // We need children vector in same structure used by DP (build_children)
+    reconstruct_no_masks(root, best_idx, bags, vector<pair<int,int>>(), back, subsets, children, chosen);
+
+    // Collect chosen vertices and print sorted
+    vector<int> result;
+    for (int v = 0; v < n; ++v) if (chosen[v]) result.push_back(v);
+    sort(result.begin(), result.end());
+
+    cout << "MIS size = " << mis << "\n";
+    cout << "Vertices:";
+    for (int v : result) cout << " " << v;
+    cout << "\n";
+
+    return 0;
+}

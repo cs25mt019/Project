@@ -69,9 +69,10 @@ class studentSerializer(serializers.ModelSerializer):
         model=models.Student
         fields=["id","full_name","email","password","username","interested_categories"]
         extra_kwargs = {
-            "password": {"write_only": True}  
+            "password": {"write_only": True} ,
+             "email": {"required": True, "allow_blank": False} 
         }
-        read_only_fields = ["email"]
+        read_only_fields = []
 
     # def create(self, validated_data):
     #     from django.contrib.auth.hashers import make_password

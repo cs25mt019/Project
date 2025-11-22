@@ -82,7 +82,7 @@ DATABASES = {
         "USER": os.getenv("DB_USER", "root"),
         "PASSWORD": os.getenv("DB_PASSWORD", "Case@27032002"),
         "HOST": os.getenv("DB_HOST", "127.0.0.1"),
-        "PORT": os.getenv("DB_PORT", "3006"),
+        "PORT": os.getenv("DB_PORT", "3306"),
     }
 }
 
@@ -157,7 +157,7 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = "9bb1f8001@smtp-brevo.com"
 
 # THIS IS YOUR SMTP KEY (not API key, not Gmail password)
-EMAIL_HOST_PASSWORD = "xsmtpsib-7352969d369eb88b539c2fd1a2e57bd918658fd40045693f07307af3b81ad5bb-T1Ubl3Bw5LVwe1XY"
+EMAIL_HOST_PASSWORD = "xsmtpsib-7352969d369eb88b539c2fd1a2e57bd918658fd40045693f07307af3b81ad5bb-dxuZs1WRCuKe6pH3"
 
 # This is what recipient sees
 DEFAULT_FROM_EMAIL = "sahilrocky930@gmail.com"
