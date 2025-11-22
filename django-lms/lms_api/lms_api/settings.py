@@ -153,11 +153,9 @@ EMAIL_HOST = "smtp-relay.brevo.com"
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 
-# THIS MUST MATCH BREVO LOGIN USERNAME (NOT YOUR GMAIL!)
-EMAIL_HOST_USER = "9bb1f8001@smtp-brevo.com"
+EMAIL_HOST_USER = ""
 
-# THIS IS YOUR SMTP KEY (not API key, not Gmail password)
-EMAIL_HOST_PASSWORD = "xsmtpsib-7352969d369eb88b539c2fd1a2e57bd918658fd40045693f07307af3b81ad5bb-dxuZs1WRCuKe6pH3"
+EMAIL_HOST_PASSWORD = ""
 
 # This is what recipient sees
 DEFAULT_FROM_EMAIL = "sahilrocky930@gmail.com"
